@@ -107,9 +107,7 @@
                     const encrypted = await openpgp.encrypt({
                         message: await openpgp.createMessage({ binary: fileData }),
                         encryptionKeys: publicKeyObj,
-                        config: {
-                            armor: false  // Set armor to false to produce non-armored output
-                        }
+                        format: 'binary'  // Ensure the output is binary
                     });
 
                     const blob = new Blob([encrypted], { type: 'application/octet-stream' });
