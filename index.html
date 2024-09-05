@@ -106,10 +106,11 @@
             document.getElementById('loading').style.display = 'flex';
 
             try {
-                const zip = new JSZip();
                 const publicKeyObj = await openpgp.readKey({ armoredKey: window.publicKey });
 
-                for (const file of files) {
+                if (files.length === 1) {
+                    // Handle single file encryption
+                    const file = files[0];
                     const fileData = await readFileAsArrayBuffer(file);
                     
                     const encrypted = await openpgp.encrypt({
@@ -119,16 +120,33 @@
                     });
 
                     const encryptedFileName = `${file.name}.gpg`;
-                    zip.file(encryptedFileName, encrypted);
+                    downloadEncryptedFile(encrypted, encryptedFileName);
+
+                } else {
+                    // Handle multiple files, zip and encrypt each one
+                    const zip = new JSZip();
+
+                    for (const file of files) {
+                        const fileData = await readFileAsArrayBuffer(file);
+                        
+                        const encrypted = await openpgp.encrypt({
+                            message: await openpgp.createMessage({ binary: new Uint8Array(fileData) }),
+                            encryptionKeys: publicKeyObj,
+                            format: 'binary'
+                        });
+
+                        const encryptedFileName = `${file.name}.gpg`;
+                        zip.file(encryptedFileName, encrypted);
+                    }
+
+                    const zipContent = await zip.generateAsync({ type: "uint8array" });
+                    const compressed = pako.gzip(zipContent);
+
+                    const randomString = generateRandomString(8);
+                    const tgzFilename = `encrypted_files_${randomString}.tgz`;
+
+                    downloadCompressedFile(compressed, tgzFilename);
                 }
-
-                const zipContent = await zip.generateAsync({ type: "uint8array" });
-                const compressed = pako.gzip(zipContent);
-                
-                const randomString = generateRandomString(8);
-                const tgzFilename = `encrypted_files_${randomString}.tgz`;
-
-                downloadCompressedFile(compressed, tgzFilename);
 
             } catch (error) {
                 alert('Encryption failed.');
@@ -146,6 +164,18 @@
                 reader.onerror = () => reject(reader.error);
                 reader.readAsArrayBuffer(file);
             });
+        }
+
+        // Helper function to download encrypted single file
+        function downloadEncryptedFile(data, filename) {
+            const blob = new Blob([data], { type: 'application/octet-stream' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
         }
 
         // Helper function to download the compressed .tgz file
