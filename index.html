@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Encrypt File for Cross</title>
+    <title>Encrypt Files for Cross</title>
     <script defer src="https://umami.dill.moe/script.js" data-website-id="b1ce006c-2673-4f8b-8347-dcdf83b4373e"></script>
-    <script src="https://enc.dill.moe/openpgp.min.js"></script>
+    <script src="./openpgp.min.js"></script>
+    <script src="./jszip.min.js"></script>
+    <script src="./pako.min.js"></script>
     <style>
         body {
             background-color: #121212;
@@ -42,7 +44,7 @@
             background-color: #3700b3;
         }
         #loading {
-            display: none; /* Ensure it's hidden initially */
+            display: none;
             margin-top: 20px;
             align-items: center;
             justify-content: center;
@@ -66,10 +68,10 @@
 </head>
 <body>
     <div id="encrypt-form">
-        <h1>Encrypt File for Cross</h1>
+        <h1>Encrypt Files for Cross</h1>
         <form id="form">
-            <label for="file">Select File to Encrypt:</label>
-            <input type="file" id="file" name="file" required>
+            <label for="file">Select Files to Encrypt:</label>
+            <input type="file" id="file" name="file" multiple required>
             <button type="submit">Encrypt</button>
         </form>
         <div id="loading">
@@ -93,46 +95,81 @@
         
         document.getElementById('form').addEventListener('submit', async (e) => {
             e.preventDefault();
-        
+
             const fileInput = document.getElementById('file');
-            const file = fileInput.files[0];
-            if (!file) {
-                alert('Please select a file.');
+            const files = fileInput.files;
+            if (!files.length) {
+                alert('Please select at least one file.');
                 return;
             }
-        
-            document.getElementById('loading').style.display = 'flex';
-            
-            const reader = new FileReader();
-            reader.onload = async (event) => {
-                try {
-                    const fileData = new Uint8Array(event.target.result);
-                    const publicKeyObj = await openpgp.readKey({ armoredKey: window.publicKey });
 
+            document.getElementById('loading').style.display = 'flex';
+
+            try {
+                const zip = new JSZip();
+                const publicKeyObj = await openpgp.readKey({ armoredKey: window.publicKey });
+
+                for (const file of files) {
+                    const fileData = await readFileAsArrayBuffer(file);
+                    
                     const encrypted = await openpgp.encrypt({
-                        message: await openpgp.createMessage({ binary: fileData }),
+                        message: await openpgp.createMessage({ binary: new Uint8Array(fileData) }),
                         encryptionKeys: publicKeyObj,
                         format: 'binary'
                     });
 
-                    const blob = new Blob([encrypted], { type: 'application/octet-stream' });
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `${file.name}.gpg`;
-                    document.body.appendChild(a);
-                    a.click();
-                    a.remove();
-
-                } catch (error) {
-                    alert('Encryption failed.');
-                    console.error(error);
-                } finally {
-                    document.getElementById('loading').style.display = 'none';
+                    const encryptedFileName = `${file.name}.gpg`;
+                    zip.file(encryptedFileName, encrypted);
                 }
-            };
-            reader.readAsArrayBuffer(file);
+
+                const zipContent = await zip.generateAsync({ type: "uint8array" });
+                const compressed = pako.gzip(zipContent);
+                
+                const randomString = generateRandomString(8);
+                const tgzFilename = `encrypted_files_${randomString}.tgz`;
+
+                downloadCompressedFile(compressed, tgzFilename);
+
+            } catch (error) {
+                alert('Encryption failed.');
+                console.error(error);
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
         });
+
+        // Helper function to read the file as ArrayBuffer
+        function readFileAsArrayBuffer(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject(reader.error);
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        // Helper function to download the compressed .tgz file
+        function downloadCompressedFile(data, filename) {
+            const blob = new Blob([data], { type: 'application/gzip' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        }
+
+        // Function to generate random 8-character string
+        function generateRandomString(length) {
+            const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+            let result = '';
+            for (let i = 0; i < length; i++) {
+                const randomIndex = Math.floor(Math.random() * chars.length);
+                result += chars[randomIndex];
+            }
+            return result;
+        }
     </script>
 </body>
 </html>
