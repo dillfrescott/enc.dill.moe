@@ -149,8 +149,9 @@
         </div>
     </div>
     <script>
-        const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB per chunk
-
+        // Remove the unused CHUNK_SIZE constant
+        // const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB per chunk
+    
         document.addEventListener('DOMContentLoaded', async () => {
             try {
                 const response = await fetch('https://enc.dill.moe/keys/dillfrescott');
@@ -163,46 +164,46 @@
                 console.error(error);
             }
         });
-
+    
         document.getElementById('form').addEventListener('submit', async (e) => {
             e.preventDefault();
-
+    
             document.querySelector('#form').style.display = 'none';
             document.getElementById('loading').style.display = 'flex';
-
+    
             const fileInput = document.getElementById('file');
             const folderInput = document.getElementById('folder');
-
+    
             const files = Array.from(fileInput.files);
             const folders = Array.from(folderInput.files);
-
+    
             const allFiles = files.concat(folders);
-
+    
             if (!allFiles.length) {
                 alert('Please select at least one file or folder.');
                 resetForm();
                 return;
             }
-
+    
             const progressBar = document.getElementById('progress');
             const statusText = document.getElementById('status');
             const fileProgressBar = document.getElementById('file-progress-bar');
-
+    
             fileProgressBar.style.display = 'block';
-
+    
             try {
                 const zip = new JSZip();
                 const publicKeyObj = await openpgp.readKey({ armoredKey: window.publicKey });
-
+    
                 let processedFiles = 0;
                 const totalFiles = allFiles.length;
-
+    
                 const fileProgress = document.getElementById('file-progress');
                 fileProgress.textContent = `0/${totalFiles}`;
-
+    
                 const totalSize = allFiles.reduce((sum, file) => sum + file.size, 0);
                 let processedSize = 0;
-
+    
                 for (const file of allFiles) {
                     const path = file.webkitRelativePath || file.name;
                     statusText.textContent = `Processing ${path}...`;
@@ -212,17 +213,17 @@
                     // Add .gpg extension
                     const encryptedFileName = `${path}.gpg`;
                     zip.file(encryptedFileName, encryptedData);
-
+    
                     processedSize += file.size;
                     updateProgress(processedSize, totalSize);
-
+    
                     processedFiles++;
                     updateFileCountProgress(processedFiles, totalFiles);
                 }
-
+    
                 statusText.textContent = 'Compressing files...';
                 await compressAndDownload(zip, statusText, progressBar);
-
+    
             } catch (error) {
                 alert('Encryption failed: ' + error.message);
                 console.error(error);
