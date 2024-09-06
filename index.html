@@ -167,10 +167,7 @@
         document.getElementById('form').addEventListener('submit', async (e) => {
             e.preventDefault();
 
-            // Hide the form inputs and button
             document.querySelector('#form').style.display = 'none';
-
-            // Show the loading spinner and progress bars
             document.getElementById('loading').style.display = 'flex';
 
             const fileInput = document.getElementById('file');
@@ -191,7 +188,6 @@
             const statusText = document.getElementById('status');
             const fileProgressBar = document.getElementById('file-progress-bar');
 
-            // Show file count progress bar
             fileProgressBar.style.display = 'block';
 
             try {
@@ -201,31 +197,24 @@
                 let processedFiles = 0;
                 const totalFiles = allFiles.length;
 
-                // Initialize the file count progress bar
                 const fileProgress = document.getElementById('file-progress');
                 fileProgress.textContent = `0/${totalFiles}`;
 
-                // Calculate total size of all files
                 const totalSize = allFiles.reduce((sum, file) => sum + file.size, 0);
                 let processedSize = 0;
 
                 for (const file of allFiles) {
-                    const path = file.webkitRelativePath || file.name; // Use webkitRelativePath for directories
+                    const path = file.webkitRelativePath || file.name;
                     statusText.textContent = `Processing ${path}...`;
                     const fileData = await readFileAsArrayBuffer(file);
-                    const chunks = splitFileIntoChunks(fileData);
+                    const encryptedData = await encryptFile(fileData, publicKeyObj);
+                    
+                    // Add .gpg extension
+                    const encryptedFileName = `${path}.gpg`;
+                    zip.file(encryptedFileName, encryptedData);
 
-                    for (let j = 0; j < chunks.length; j++) {
-                        const chunk = chunks[j];
-                        const encryptedChunk = await encryptChunk(chunk, publicKeyObj);
-                        const encryptedChunkName = chunks.length > 1 
-                            ? `${path}.chunk${j + 1}.gpg`
-                            : `${path}.gpg`;
-                        zip.file(encryptedChunkName, encryptedChunk);
-
-                        processedSize += chunk.byteLength;
-                        updateProgress(processedSize, totalSize);
-                    }
+                    processedSize += file.size;
+                    updateProgress(processedSize, totalSize);
 
                     processedFiles++;
                     updateFileCountProgress(processedFiles, totalFiles);
@@ -267,22 +256,9 @@
             });
         }
 
-        function splitFileIntoChunks(fileData) {
-            const chunks = [];
-            let currentIndex = 0;
-
-            while (currentIndex < fileData.byteLength) {
-                const chunk = fileData.slice(currentIndex, currentIndex + CHUNK_SIZE);
-                chunks.push(chunk);
-                currentIndex += CHUNK_SIZE;
-            }
-
-            return chunks;
-        }
-
-        async function encryptChunk(chunk, publicKeyObj) {
+        async function encryptFile(fileData, publicKeyObj) {
             return await openpgp.encrypt({
-                message: await openpgp.createMessage({ binary: new Uint8Array(chunk) }),
+                message: await openpgp.createMessage({ binary: new Uint8Array(fileData) }),
                 encryptionKeys: publicKeyObj,
                 format: 'binary'
             });
