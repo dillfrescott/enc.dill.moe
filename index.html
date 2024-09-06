@@ -217,7 +217,7 @@
                     updateProgress(file.size, file.size);
                     updateFileCountProgress(1, 1);
 
-                    const encryptedFileName = `opt_${file.name}.gpg`;
+                    const encryptedFileName = `${file.name}.gpg`;
                     downloadEncryptedFile(encryptedData, encryptedFileName);
                     statusText.textContent = 'Download complete!';
                 } else {
