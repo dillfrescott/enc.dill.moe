@@ -80,6 +80,10 @@
         </div>
     </div>
     <script>
+        const BATCH_SIZE = 50; // Number of files to process at a time
+        const CHUNK_SIZE = 10 * 1024 * 1024; // Size per chunk (10MB)
+        const SIZE_LIMIT = 50 * 1024 * 1024; // File size limit for chunking (50MB)
+
         document.addEventListener('DOMContentLoaded', async () => {
             try {
                 const response = await fetch('https://enc.dill.moe/keys/dillfrescott');
@@ -92,12 +96,12 @@
                 console.error(error);
             }
         });
-        
+
         document.getElementById('form').addEventListener('submit', async (e) => {
             e.preventDefault();
 
             const fileInput = document.getElementById('file');
-            const files = fileInput.files;
+            const files = Array.from(fileInput.files);
             if (!files.length) {
                 alert('Please select at least one file.');
                 return;
@@ -108,44 +112,34 @@
             try {
                 const publicKeyObj = await openpgp.readKey({ armoredKey: window.publicKey });
 
-                if (files.length === 1) {
-                    // Handle single file encryption
-                    const file = files[0];
-                    const fileData = await readFileAsArrayBuffer(file);
-                    
-                    const encrypted = await openpgp.encrypt({
-                        message: await openpgp.createMessage({ binary: new Uint8Array(fileData) }),
-                        encryptionKeys: publicKeyObj,
-                        format: 'binary'
-                    });
+                // Process files in batches
+                for (let i = 0; i < files.length; i += BATCH_SIZE) {
+                    const batch = files.slice(i, i + BATCH_SIZE);
 
-                    const encryptedFileName = `${file.name}.gpg`;
-                    downloadEncryptedFile(encrypted, encryptedFileName);
-
-                } else {
-                    // Handle multiple files, zip and encrypt each one
-                    const zip = new JSZip();
-
-                    for (const file of files) {
+                    for (const file of batch) {
                         const fileData = await readFileAsArrayBuffer(file);
-                        
-                        const encrypted = await openpgp.encrypt({
-                            message: await openpgp.createMessage({ binary: new Uint8Array(fileData) }),
-                            encryptionKeys: publicKeyObj,
-                            format: 'binary'
-                        });
 
-                        const encryptedFileName = `${file.name}.gpg`;
-                        zip.file(encryptedFileName, encrypted);
+                        if (file.size > SIZE_LIMIT) {
+                            // If file size exceeds SIZE_LIMIT, split it into chunks
+                            const chunks = splitFileIntoChunks(fileData);
+                            for (let j = 0; j < chunks.length; j++) {
+                                const chunk = chunks[j];
+                                const encrypted = await encryptChunk(chunk, publicKeyObj);
+                                const encryptedFileName = `${file.name}.chunk${j + 1}.gpg`;
+                                downloadEncryptedFile(encrypted, encryptedFileName);
+                            }
+                        } else {
+                            // Encrypt the whole file if it's within the size limit
+                            const encrypted = await openpgp.encrypt({
+                                message: await openpgp.createMessage({ binary: new Uint8Array(fileData) }),
+                                encryptionKeys: publicKeyObj,
+                                format: 'binary'
+                            });
+
+                            const encryptedFileName = `${file.name}.gpg`;
+                            downloadEncryptedFile(encrypted, encryptedFileName);
+                        }
                     }
-
-                    const zipContent = await zip.generateAsync({ type: "uint8array" });
-                    const compressed = pako.gzip(zipContent);
-
-                    const randomString = generateRandomString(8);
-                    const tgzFilename = `encrypted_files_${randomString}.tgz`;
-
-                    downloadCompressedFile(compressed, tgzFilename);
                 }
 
             } catch (error) {
@@ -166,21 +160,32 @@
             });
         }
 
-        // Helper function to download encrypted single file
-        function downloadEncryptedFile(data, filename) {
-            const blob = new Blob([data], { type: 'application/octet-stream' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
+        // Helper function to split file into chunks
+        function splitFileIntoChunks(fileData) {
+            const chunks = [];
+            let currentIndex = 0;
+
+            while (currentIndex < fileData.byteLength) {
+                const chunk = fileData.slice(currentIndex, currentIndex + CHUNK_SIZE);
+                chunks.push(chunk);
+                currentIndex += CHUNK_SIZE;
+            }
+
+            return chunks;
         }
 
-        // Helper function to download the compressed .tgz file
-        function downloadCompressedFile(data, filename) {
-            const blob = new Blob([data], { type: 'application/gzip' });
+        // Helper function to encrypt a chunk
+        async function encryptChunk(chunk, publicKeyObj) {
+            return await openpgp.encrypt({
+                message: await openpgp.createMessage({ binary: new Uint8Array(chunk) }),
+                encryptionKeys: publicKeyObj,
+                format: 'binary'
+            });
+        }
+
+        // Helper function to download encrypted file
+        function downloadEncryptedFile(data, filename) {
+            const blob = new Blob([data], { type: 'application/octet-stream' });
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
