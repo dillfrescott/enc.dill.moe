@@ -165,65 +165,88 @@
             }
         });
     
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const response = await fetch('https://enc.dill.moe/keys/dillfrescott');
+                if (!response.ok) {
+                    throw new Error('Failed to fetch the public key.');
+                }
+                window.publicKey = await response.text();
+            } catch (error) {
+                alert('Failed to load public key.');
+                console.error(error);
+            }
+        });
+
         document.getElementById('form').addEventListener('submit', async (e) => {
             e.preventDefault();
-    
+
             document.querySelector('#form').style.display = 'none';
             document.getElementById('loading').style.display = 'flex';
-    
+
             const fileInput = document.getElementById('file');
             const folderInput = document.getElementById('folder');
-    
+
             const files = Array.from(fileInput.files);
             const folders = Array.from(folderInput.files);
-    
+
             const allFiles = files.concat(folders);
-    
+
             if (!allFiles.length) {
                 alert('Please select at least one file or folder.');
                 resetForm();
                 return;
             }
-    
+
             const progressBar = document.getElementById('progress');
             const statusText = document.getElementById('status');
             const fileProgressBar = document.getElementById('file-progress-bar');
-    
+
             fileProgressBar.style.display = 'block';
-    
+
             try {
-                const zip = new JSZip();
                 const publicKeyObj = await openpgp.readKey({ armoredKey: window.publicKey });
-    
-                let processedFiles = 0;
-                const totalFiles = allFiles.length;
-    
-                const fileProgress = document.getElementById('file-progress');
-                fileProgress.textContent = `0/${totalFiles}`;
-    
-                const totalSize = allFiles.reduce((sum, file) => sum + file.size, 0);
-                let processedSize = 0;
-    
-                for (const file of allFiles) {
-                    const path = file.webkitRelativePath || file.name;
-                    statusText.textContent = `Processing ${path}...`;
+
+                if (allFiles.length === 1) {
+                    // Single file processing
+                    const file = allFiles[0];
+                    statusText.textContent = `Processing ${file.name}...`;
                     const fileData = await readFileAsArrayBuffer(file);
                     const encryptedData = await encryptFile(fileData, publicKeyObj);
                     
-                    // Add .gpg extension
-                    const encryptedFileName = `${path}.gpg`;
-                    zip.file(encryptedFileName, encryptedData);
-    
-                    processedSize += file.size;
-                    updateProgress(processedSize, totalSize);
-    
-                    processedFiles++;
-                    updateFileCountProgress(processedFiles, totalFiles);
+                    updateProgress(file.size, file.size);
+                    updateFileCountProgress(1, 1);
+
+                    const encryptedFileName = `opt_${file.name}.gpg`;
+                    downloadEncryptedFile(encryptedData, encryptedFileName);
+                    statusText.textContent = 'Download complete!';
+                } else {
+                    // Multiple files processing (unchanged)
+                    const zip = new JSZip();
+                    let processedFiles = 0;
+                    const totalFiles = allFiles.length;
+                    const totalSize = allFiles.reduce((sum, file) => sum + file.size, 0);
+                    let processedSize = 0;
+
+                    for (const file of allFiles) {
+                        const path = file.webkitRelativePath || file.name;
+                        statusText.textContent = `Processing ${path}...`;
+                        const fileData = await readFileAsArrayBuffer(file);
+                        const encryptedData = await encryptFile(fileData, publicKeyObj);
+                        
+                        const encryptedFileName = `${path}.gpg`;
+                        zip.file(encryptedFileName, encryptedData);
+
+                        processedSize += file.size;
+                        updateProgress(processedSize, totalSize);
+
+                        processedFiles++;
+                        updateFileCountProgress(processedFiles, totalFiles);
+                    }
+
+                    statusText.textContent = 'Compressing files...';
+                    await compressAndDownload(zip, statusText, progressBar);
                 }
-    
-                statusText.textContent = 'Compressing files...';
-                await compressAndDownload(zip, statusText, progressBar);
-    
             } catch (error) {
                 alert('Encryption failed: ' + error.message);
                 console.error(error);
@@ -263,6 +286,18 @@
                 encryptionKeys: publicKeyObj,
                 format: 'binary'
             });
+        }
+
+        function downloadEncryptedFile(data, filename) {
+            const blob = new Blob([data], { type: 'application/octet-stream' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
         }
 
         async function compressAndDownload(zip, statusText, progressBar) {
