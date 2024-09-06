@@ -183,9 +183,7 @@
 
             if (!allFiles.length) {
                 alert('Please select at least one file or folder.');
-                // Re-show the form if no files were selected
-                document.querySelector('#form').style.display = 'block';
-                document.getElementById('loading').style.display = 'none';
+                resetForm();
                 return;
             }
 
@@ -240,17 +238,20 @@
                 alert('Encryption failed: ' + error.message);
                 console.error(error);
             } finally {
-                setTimeout(() => {
-                    document.getElementById('loading').style.display = 'none';
-                    progressBar.style.width = '0%';
-                    progressBar.textContent = '0%';
-                    fileProgressBar.style.display = 'none'; // Hide file count progress bar
-                    fileProgress.textContent = '0/0';
-                    // Re-show the form if needed
-                    document.querySelector('#form').style.display = 'block';
-                }, 3000);
+                setTimeout(resetForm, 3000);
             }
         });
+
+        function resetForm() {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('progress').style.width = '0%';
+            document.getElementById('progress').textContent = '0%';
+            document.getElementById('file-progress-bar').style.display = 'none';
+            document.getElementById('file-progress').textContent = '0/0';
+            document.getElementById('form').style.display = 'block';
+            document.getElementById('file').value = '';
+            document.getElementById('folder').value = '';
+        }
 
         function updateFileCountProgress(processedFiles, totalFiles) {
             const fileProgress = document.getElementById('file-progress');
