@@ -49,7 +49,6 @@
             align-items: center;
             justify-content: center;
         }
-        
         .spinner {
             border: 4px solid rgba(255, 255, 255, 0.3);
             border-top: 4px solid #ffffff;
@@ -59,7 +58,6 @@
             animation: spin 1s linear infinite;
             margin-right: 10px;
         }
-        
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
@@ -80,9 +78,8 @@
         </div>
     </div>
     <script>
-        const BATCH_SIZE = 50; // Number of files to process at a time
-        const CHUNK_SIZE = 10 * 1024 * 1024; // Size per chunk (10MB)
-        const SIZE_LIMIT = 50 * 1024 * 1024; // File size limit for chunking (50MB)
+        const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB per chunk
+        const SIZE_LIMIT = 50 * 1024 * 1024; // Files above 50MB will be chunked
 
         document.addEventListener('DOMContentLoaded', async () => {
             try {
@@ -110,37 +107,36 @@
             document.getElementById('loading').style.display = 'flex';
 
             try {
+                const zip = new JSZip();
                 const publicKeyObj = await openpgp.readKey({ armoredKey: window.publicKey });
 
-                // Process files in batches
-                for (let i = 0; i < files.length; i += BATCH_SIZE) {
-                    const batch = files.slice(i, i + BATCH_SIZE);
+                for (const file of files) {
+                    const fileData = await readFileAsArrayBuffer(file);
 
-                    for (const file of batch) {
-                        const fileData = await readFileAsArrayBuffer(file);
-
-                        if (file.size > SIZE_LIMIT) {
-                            // If file size exceeds SIZE_LIMIT, split it into chunks
-                            const chunks = splitFileIntoChunks(fileData);
-                            for (let j = 0; j < chunks.length; j++) {
-                                const chunk = chunks[j];
-                                const encrypted = await encryptChunk(chunk, publicKeyObj);
-                                const encryptedFileName = `${file.name}.chunk${j + 1}.gpg`;
-                                downloadEncryptedFile(encrypted, encryptedFileName);
-                            }
-                        } else {
-                            // Encrypt the whole file if it's within the size limit
-                            const encrypted = await openpgp.encrypt({
-                                message: await openpgp.createMessage({ binary: new Uint8Array(fileData) }),
-                                encryptionKeys: publicKeyObj,
-                                format: 'binary'
-                            });
-
-                            const encryptedFileName = `${file.name}.gpg`;
-                            downloadEncryptedFile(encrypted, encryptedFileName);
+                    if (file.size > SIZE_LIMIT) {
+                        // Handle large files by chunking them
+                        const chunks = splitFileIntoChunks(fileData);
+                        for (let j = 0; j < chunks.length; j++) {
+                            const chunk = chunks[j];
+                            const encryptedChunk = await encryptChunk(chunk, publicKeyObj);
+                            const encryptedChunkName = `${file.name}.chunk${j + 1}.gpg`;
+                            zip.file(encryptedChunkName, encryptedChunk);
                         }
+                    } else {
+                        // Encrypt the whole file if it's within the size limit
+                        const encryptedFile = await encryptFile(fileData, publicKeyObj);
+                        const encryptedFileName = `${file.name}.gpg`;
+                        zip.file(encryptedFileName, encryptedFile);
                     }
                 }
+
+                // Generate the zip file, compress it, and offer it for download
+                const zipContent = await zip.generateAsync({ type: 'uint8array' });
+                const compressedZip = pako.gzip(zipContent);
+                const randomString = generateRandomString(8);
+                const tgzFilename = `encrypted_files_${randomString}.tgz`;
+
+                downloadCompressedFile(compressedZip, tgzFilename);
 
             } catch (error) {
                 alert('Encryption failed.');
@@ -183,9 +179,18 @@
             });
         }
 
-        // Helper function to download encrypted file
-        function downloadEncryptedFile(data, filename) {
-            const blob = new Blob([data], { type: 'application/octet-stream' });
+        // Helper function to encrypt a full file
+        async function encryptFile(fileData, publicKeyObj) {
+            return await openpgp.encrypt({
+                message: await openpgp.createMessage({ binary: new Uint8Array(fileData) }),
+                encryptionKeys: publicKeyObj,
+                format: 'binary'
+            });
+        }
+
+        // Helper function to download the compressed .tgz file
+        function downloadCompressedFile(data, filename) {
+            const blob = new Blob([data], { type: 'application/gzip' });
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -195,7 +200,7 @@
             a.remove();
         }
 
-        // Function to generate random 8-character string
+        // Function to generate a random 8-character string
         function generateRandomString(length) {
             const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
             let result = '';
